@@ -2,8 +2,13 @@ import math
 import os
 import tkinter as tk
 
+from typing import List, Literal, Tuple
+
 import cv2 as cv
 import numpy as np
+import svgwrite
+
+from numpy.typing import NDArray
 
 """
 This script is designed to draw the logo of the company vEMPIRE
@@ -34,7 +39,7 @@ color_contour = (0,0,0)
 contour_size = 8
 resolution = 1080
 
-def bernstein_polynomial(points : np.array, t : float):
+def bernstein_polynomial(points : NDArray[np.int64], t : float):
 
     """
     This function is used to compute the bernstein polynomial for points evaluated at t
@@ -44,7 +49,7 @@ def bernstein_polynomial(points : np.array, t : float):
     values = [math.comb(n - 1, i) * ((1 - t) ** (n - 1 - i)) * (t ** i) * points[i] for i in range(n)]
     return np.sum(values, axis = 0)
 
-def bezier_curve(points : np.array, precision : int = 1000):
+def bezier_curve(points : NDArray[np.int64], precision : int = 1000):
 
     """
     This function is used to generate precision points for the bezier curve with the points given
@@ -53,10 +58,10 @@ def bezier_curve(points : np.array, precision : int = 1000):
     return np.array([bernstein_polynomial(points, t) for t in np.linspace(0, 1, precision)], dtype = np.int32)
 
 def draw_logo(color_blank : np.uint8, 
-              color_contour : tuple[np.uint8, np.uint8, np.uint8], 
-              color_fang : tuple[np.uint8, np.uint8, np.uint8], 
-              color_red : tuple[np.uint8, np.uint8, np.uint8], 
-              color_red_shadow : tuple[np.uint8, np.uint8, np.uint8], 
+              color_contour : Tuple[np.uint8, np.uint8, np.uint8], 
+              color_fang : Tuple[np.uint8, np.uint8, np.uint8], 
+              color_red : Tuple[np.uint8, np.uint8, np.uint8], 
+              color_red_shadow : Tuple[np.uint8, np.uint8, np.uint8], 
               contour : bool, 
               contour_size : int):
     
@@ -182,6 +187,11 @@ def draw_logo(color_blank : np.uint8,
                               np.flip(bezier_curve_7[:-1], axis = 0)))
     cv.fillPoly(image, [shape_5], color = color_red_shadow)
 
+    ##### Store the shapes and lines
+
+    lines = [bezier_curve_1, bezier_curve_2, bezier_curve_3, bezier_curve_4, bezier_curve_5, bezier_curve_6, bezier_curve_7]
+    shapes = [4 *fang, shape_1, shape_2, shape_3, shape_4, shape_5]
+
     ##### Add contour if requested
 
     if contour:
@@ -190,6 +200,9 @@ def draw_logo(color_blank : np.uint8,
         cv.line(image, (4 * (350 - 5), 4 * 550), (4 * (450 - 5), 4 * 450), color_contour, contour_size)
         cv.polylines(image, [4 * fang], True, color_contour, contour_size)
 
+    lines.append(np.array([[4 * (350 - 5), 4 * 550], [4 * (450 - 5), 4 * 450]]))
+    lines.append(np.concatenate((4 * fang, (4 * fang)[0].reshape(1, 2))))
+
     ##### Mirror the image to have a perfect symmetry
 
     image[:, 2 * resolution:] = cv.flip(image, 1)[:, 2 * resolution:]
@@ -197,13 +210,66 @@ def draw_logo(color_blank : np.uint8,
     ##### Resize the image to the desired resolution to apply anti-aliasing
 
     image = cv.resize(image, (resolution, resolution), interpolation = cv.INTER_AREA)
-    return image
+
+    return image, lines, shapes
+
+def color_tuple_to_str(color : Tuple[np.uint8, np.uint8, np.uint8]):
+
+    """
+    This function is used to convert BGR tuple to RGB string
+    """
+        
+    return f"rgb({color[2]}, {color[1]}, {color[0]})"
+
+def save_logo_svg(filename : str, 
+                  resolution : int, 
+                  shapes : List[NDArray[np.int64]], 
+                  lines : List[NDArray[np.int64]],
+                  color_blank : np.uint8, 
+                  color_contour : Tuple[np.uint8, np.uint8, np.uint8], 
+                  color_fang : Tuple[np.uint8, np.uint8, np.uint8], 
+                  color_red : Tuple[np.uint8, np.uint8, np.uint8], 
+                  color_red_shadow : Tuple[np.uint8, np.uint8, np.uint8], 
+                  contour : bool, 
+                  contour_size : int):
+    
+    """
+    This function is used save the logo as a svg
+    """
+        
+    dwg = svgwrite.Drawing(filename, profile='tiny', size=(f"{4 * resolution}px", f"{4 * resolution}px"))
+    dwg.add(dwg.polygon(shapes[0].tolist(), fill=color_tuple_to_str(color_fang)))
+    dwg.add(dwg.polygon(shapes[1].tolist(), fill=color_tuple_to_str(color_red)))
+    dwg.add(dwg.polygon(shapes[2].tolist(), fill=color_tuple_to_str(color_fang)))
+    dwg.add(dwg.polygon(shapes[3].tolist(), fill=color_tuple_to_str(color_red)))
+    dwg.add(dwg.polygon(shapes[4].tolist(), fill=color_tuple_to_str(color_red_shadow)))
+    dwg.add(dwg.polygon(shapes[5].tolist(), fill=color_tuple_to_str(color_red_shadow)))
+    dwg.add(dwg.polygon(shapes[0].tolist(), fill=color_tuple_to_str(color_fang), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    dwg.add(dwg.polygon(shapes[1].tolist(), fill=color_tuple_to_str(color_red), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    dwg.add(dwg.polygon(shapes[2].tolist(), fill=color_tuple_to_str(color_fang), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    dwg.add(dwg.polygon(shapes[3].tolist(), fill=color_tuple_to_str(color_red), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    dwg.add(dwg.polygon(shapes[4].tolist(), fill=color_tuple_to_str(color_red_shadow), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    dwg.add(dwg.polygon(shapes[5].tolist(), fill=color_tuple_to_str(color_red_shadow), transform=f"translate({4 * resolution - 5}, 0) scale(-1, 1)"))
+    if contour:
+        for line in lines:
+            dwg.add(dwg.polyline(line.tolist(), 
+                                 stroke=color_tuple_to_str(color_contour), 
+                                 fill='none', 
+                                 stroke_width=contour_size))
+            dwg.add(dwg.polyline(line.tolist(), 
+                                 stroke=color_tuple_to_str(color_contour), 
+                                 fill='none', 
+                                 stroke_width=contour_size, 
+                                 transform=f"translate({4 * resolution - 4}, 0) scale(-1, 1)"))
+    dwg.save()
 
 while True:
 
-    ##### We store the original images to save them on the disk at the full resolution
+    ##### We store the original images as well as lines and shapes to save them on the disk at the full resolution
 
     images = []
+    lines = []
+    shapes = []
     index = 0
 
     ##### We loop on every variant possible
@@ -212,7 +278,16 @@ while True:
         for color_figures in [False, True]:
             if color_figures == False:
                 if color_blank == 0:
-                    images.append(draw_logo(color_blank, tuple([255 - cc for cc in color_contour]), (0,) * 3, (0,) * 3, (0,) * 3, True, contour_size))
+                    image, line, shape = draw_logo(color_blank, 
+                                                   tuple([255 - cc for cc in color_contour]), 
+                                                   (0,) * 3,
+                                                   (0,) * 3, 
+                                                   (0,) * 3, 
+                                                   True, 
+                                                   contour_size)
+                    images.append(image)
+                    lines.append(line)
+                    shapes.append(shape)
 
                     ##### We create and move the windows in a 2x3 grid
 
@@ -221,7 +296,10 @@ while True:
                     cv.imshow(f'Image {index}', cv.resize(images[index], (400, 400), interpolation = cv.INTER_AREA))
                     index += 1
                 else:
-                    images.append(draw_logo(color_blank, color_contour, (255,) * 3, (255,) * 3, (255,) * 3, 1, contour_size))
+                    image, line, shape = draw_logo(color_blank, color_contour, (255,) * 3, (255,) * 3, (255,) * 3, 1, contour_size)
+                    images.append(image)
+                    lines.append(line)
+                    shapes.append(shape)
                     cv.namedWindow(f'Image {index}')
                     cv.moveWindow(f'Image {index}', x_offset + 400 * (index % 3), y_offset - offset + (400 + offset) * (index // 3))
                     cv.imshow(f'Image {index}', cv.resize(images[index], (400, 400), interpolation = cv.INTER_AREA))
@@ -232,7 +310,10 @@ while True:
                         color_fang = (255,) * 3
                     else:
                         color_fang = (0,) * 3
-                    images.append(draw_logo(color_blank, color_contour, color_fang, color_red, color_red_shadow, contour, contour_size))
+                    image, line, shape = draw_logo(color_blank, color_contour, color_fang, color_red, color_red_shadow, contour, contour_size)
+                    images.append(image)
+                    lines.append(line)
+                    shapes.append(shape)
                     cv.namedWindow(f'Image {index}')
                     cv.moveWindow(f'Image {index}', x_offset + 400 * (index % 3), y_offset - offset + (400 + offset) * (index // 3))
                     cv.imshow(f'Image {index}', cv.resize(images[index], (400, 400), interpolation = cv.INTER_AREA))
@@ -246,6 +327,58 @@ while True:
     if key == ord('s'):
         for index, image in enumerate(images):
             cv.imwrite(os.path.join('results', f'Image {index}.jpg'), image)
+        index = 0
+        for color_blank in [0, 255]:
+            for color_figures in [False, True]:
+                if color_figures == False:
+                    if color_blank == 0:
+                        save_logo_svg(os.path.join('results', f'Image {index}.svg'),
+                                      resolution,
+                                      shapes[index],
+                                      lines[index],
+                                      color_blank, 
+                                      tuple([255 - cc for cc in color_contour]), 
+                                      (0,) * 3,
+                                      (0,) * 3, 
+                                      (0,) * 3, 
+                                      True, 
+                                      contour_size)
+                        index += 1
+                    else:
+                        save_logo_svg(os.path.join('results', f'Image {index}.svg'),
+                                      resolution,
+                                      shapes[index],
+                                      lines[index],
+                                      color_blank, 
+                                      color_contour, 
+                                      (255,) * 3, 
+                                      (255,) * 3, 
+                                      (255,) * 3, 
+                                      1, 
+                                      contour_size)
+                        index += 1                   
+                else:
+                    for contour in [False, True]:
+                        if color_blank == 0:
+                            color_fang = (255,) * 3
+                        else:
+                            color_fang = (0,) * 3
+                        save_logo_svg(os.path.join('results', f'Image {index}.svg'),
+                                      resolution,
+                                      shapes[index],
+                                      lines[index],
+                                      color_blank, 
+                                      color_contour, 
+                                      color_fang, 
+                                      color_red, 
+                                      color_red_shadow, 
+                                      contour, 
+                                      contour_size)
+                        index += 1
         break
 
 cv.destroyAllWindows()
+
+[[475, 340],
+ [505, 340],
+ [505, 400]]
